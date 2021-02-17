@@ -14,6 +14,7 @@ function show_raid_poll($raid)
     // Get current pokemon
     $raid_pokemon_id = $raid['pokemon'];
     $raid_pokemon_form_id = $raid['pokemon_form'];
+    $raid_pokemon_form_name = '';
     ($raid_pokemon_form_id != 0) ? $raid_pokemon_form_name = get_pokemon_form_name($raid_pokemon_id, $raid_pokemon_form_id) : '';
     $raid_pokemon = $raid_pokemon_id . "-" . $raid_pokemon_form_id;
 
@@ -93,6 +94,16 @@ function show_raid_poll($raid)
         $hide_users_sql = "";
     }
 
+    // When the raid egg is hatched, hide all attendances that did not voted for hatched pokemon or any pokemon
+    // Remaining attendances are combined and treated as users that voted for any pokemon from now on
+    $order_by_sql = 'pokemon,';
+    $combine_attendances = false;
+    if(!in_array($raid['pokemon'], $GLOBALS['eggs'])) {
+        $hide_users_sql.= 'AND (pokemon = \''.$raid['pokemon'].'-'.$raid['pokemon_form'].'\' OR pokemon = \'0\')';
+        $order_by_sql = ''; // Remove sorting by pokemon since all attendances are combined
+        $combine_attendances = true;
+    }
+
     // Buttons for raid levels and pokemon hidden?
     $hide_buttons_raid_level = explode(',', $config->RAID_POLL_HIDE_BUTTONS_RAID_LEVEL);
     $hide_buttons_pokemon = explode(',', $config->RAID_POLL_HIDE_BUTTONS_POKEMON);
@@ -112,10 +123,10 @@ function show_raid_poll($raid)
         LEFT JOIN       users
           ON            attendance.user_id = users.user_id
           WHERE         raid_id = {$raid['id']}
-                        $hide_users_sql
+                        {$hide_users_sql}
             AND         attend_time IS NOT NULL
           ORDER BY      attend_time,
-                        pokemon,
+                        {$order_by_sql}
                         users.team,
                         arrived,
                         users.level desc,
@@ -137,9 +148,10 @@ function show_raid_poll($raid)
     while ($attendance = $rs_attendance->fetch()) {
         // Attendance found
         $cnt_all = 1;
+        $attendance_pokemon = $combine_attendances ? 0 : $attendance['pokemon']; // If raid egg has hatched, combine all attendances under 'any pokemon'
 
         // Define variables if necessary
-        if(!isset($cnt_array[$attendance['attend_time']][$attendance['pokemon']]))$cnt_array[$attendance['attend_time']][$attendance['pokemon']]['mystic']=$cnt_array[$attendance['attend_time']][$attendance['pokemon']]['valor']=$cnt_array[$attendance['attend_time']][$attendance['pokemon']]['instinct']=$cnt_array[$attendance['attend_time']][$attendance['pokemon']]['noteam']=$cnt_array[$attendance['attend_time']][$attendance['pokemon']]['late']=$cnt_array[$attendance['attend_time']][$attendance['pokemon']]['remote']=$cnt_array[$attendance['attend_time']][$attendance['pokemon']]['want_invite']=$cnt_array[$attendance['attend_time']][$attendance['pokemon']]['total']=0;
+        if(!isset($cnt_array[$attendance['attend_time']][$attendance_pokemon]))$cnt_array[$attendance['attend_time']][$attendance_pokemon]['mystic']=$cnt_array[$attendance['attend_time']][$attendance_pokemon]['valor']=$cnt_array[$attendance['attend_time']][$attendance_pokemon]['instinct']=$cnt_array[$attendance['attend_time']][$attendance_pokemon]['noteam']=$cnt_array[$attendance['attend_time']][$attendance_pokemon]['late']=$cnt_array[$attendance['attend_time']][$attendance_pokemon]['remote']=$cnt_array[$attendance['attend_time']][$attendance_pokemon]['want_invite']=$cnt_array[$attendance['attend_time']][$attendance_pokemon]['total']=0;
         if(!isset($cnt_array[$attendance['attend_time']]['other_pokemon'])) $cnt_array[$attendance['attend_time']]['other_pokemon'] = $cnt_array[$attendance['attend_time']]['raid_pokemon'] = $cnt_array[$attendance['attend_time']]['any_pokemon'] = 0;
 
         if($attendance['cancel'] == 0 && $attendance['raid_done'] == 0) {
@@ -153,37 +165,37 @@ function show_raid_poll($raid)
             }
 
             // Adding to total count of specific pokemon at specific time
-            $cnt_array[$attendance['attend_time']][$attendance['pokemon']]['total'] += 1 + $attendance['extra_valor'] + $attendance['extra_instinct'] + $attendance['extra_mystic'];
+            $cnt_array[$attendance['attend_time']][$attendance_pokemon]['total'] += 1 + $attendance['extra_valor'] + $attendance['extra_instinct'] + $attendance['extra_mystic'];
 
             if($attendance['want_invite'] == 0) {
                 // Fill attendance array with results
-                $att_array[$attendance['attend_time']][$attendance['pokemon']][] = $attendance;
+                $att_array[$attendance['attend_time']][$attendance_pokemon][] = $attendance;
 
                 // Fill counts array
                 if(!in_array($attendance['team'],["valor","mystic","instinct"])) $user_team = "noteam"; else $user_team = $attendance['team'];
-                $cnt_array[$attendance['attend_time']][$attendance['pokemon']][$user_team] += 1; // Add 1 to user's own team's count
-                $cnt_array[$attendance['attend_time']][$attendance['pokemon']]['valor'] += $attendance['extra_valor']; // Add extras to team counts
-                $cnt_array[$attendance['attend_time']][$attendance['pokemon']]['instinct'] += $attendance['extra_instinct'];
-                $cnt_array[$attendance['attend_time']][$attendance['pokemon']]['mystic'] += $attendance['extra_mystic'];
+                $cnt_array[$attendance['attend_time']][$attendance_pokemon][$user_team] += 1; // Add 1 to user's own team's count
+                $cnt_array[$attendance['attend_time']][$attendance_pokemon]['valor'] += $attendance['extra_valor']; // Add extras to team counts
+                $cnt_array[$attendance['attend_time']][$attendance_pokemon]['instinct'] += $attendance['extra_instinct'];
+                $cnt_array[$attendance['attend_time']][$attendance_pokemon]['mystic'] += $attendance['extra_mystic'];
 
                 if($attendance['late'] == 1) {
                     $cnt_latewait = 1;
-                    $cnt_array[$attendance['attend_time']][$attendance['pokemon']]['late'] += 1 + $attendance['extra_valor'] + $attendance['extra_mystic'] + $attendance['extra_instinct'];
+                    $cnt_array[$attendance['attend_time']][$attendance_pokemon]['late'] += 1 + $attendance['extra_valor'] + $attendance['extra_mystic'] + $attendance['extra_instinct'];
                 }
                 if($attendance['remote'] == 1) {
                     $cnt_remote = 1;
-                    $cnt_array[$attendance['attend_time']][$attendance['pokemon']]['remote'] += 1 + $attendance['extra_valor'] + $attendance['extra_mystic'] + $attendance['extra_instinct'];
+                    $cnt_array[$attendance['attend_time']][$attendance_pokemon]['remote'] += 1 + $attendance['extra_valor'] + $attendance['extra_mystic'] + $attendance['extra_instinct'];
                 }
             }else if($attendance['want_invite'] == 1) {
                 // Create array key for attend time and pokemon to maintain correct sorting order
                 if(!array_key_exists($attendance['attend_time'], $att_array)) {
-                    $att_array[$attendance['attend_time']] = null; 
-                    $att_array[$attendance['attend_time']][$attendance['pokemon']] = null;
-                }elseif(!array_key_exists($attendance['pokemon'], $att_array[$attendance['attend_time']])) {
-                    $att_array[$attendance['attend_time']][$attendance['pokemon']] = null;
+                    $att_array[$attendance['attend_time']] = []; 
+                    $att_array[$attendance['attend_time']][$attendance_pokemon] = [];
+                }elseif(!array_key_exists($attendance_pokemon, $att_array[$attendance['attend_time']])) {
+                    $att_array[$attendance['attend_time']][$attendance_pokemon] = [];
                 }
 
-                $cnt_array[$attendance['attend_time']][$attendance['pokemon']]['want_invite'] += 1 + $attendance['extra_valor'] + $attendance['extra_mystic'] + $attendance['extra_instinct'];
+                $cnt_array[$attendance['attend_time']][$attendance_pokemon]['want_invite'] += 1 + $attendance['extra_valor'] + $attendance['extra_mystic'] + $attendance['extra_instinct'];
             }
         }else {
             if($attendance['raid_done']==1) {
@@ -211,10 +223,10 @@ function show_raid_poll($raid)
           AND           want_invite = 1
           AND           cancel = 0
           AND           raid_done = 0
-                        $hide_users_sql
+                        {$hide_users_sql}
             AND         attend_time IS NOT NULL
           ORDER BY      attend_time,
-                        pokemon,
+                        {$order_by_sql}
                         attendance.id
         "
     );
@@ -223,7 +235,11 @@ function show_raid_poll($raid)
         $cnt_want_invite = 1;
 
         // Fill attendance array with results
-        $att_array[$attendance['attend_time']][$attendance['pokemon']][] = $attendance;
+        if($combine_attendances) {
+            $att_array[$attendance['attend_time']][0][] = $attendance;
+        }else {
+            $att_array[$attendance['attend_time']][$attendance['pokemon']][] = $attendance;
+        }
     }
     // Raid has started and has participants
     if($time_now > $raid['start_time'] && $cnt_all > 0) {
